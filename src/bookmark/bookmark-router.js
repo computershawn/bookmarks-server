@@ -3,15 +3,26 @@ const uuid = require('uuid/v4');
 const logger = require('../logger');
 const { bookmarks } = require('../store');
 const bookmarkRouter = express.Router();
+const BookarksService = require('./bookmarks-service')
 const bodyParser = express.json();
 
-
+const serializeBookmark = bookmark => ({
+    id: bookmark.id,
+    title: bookmark.title,
+    url: bookmark.url,
+    description: bookmark.description,
+    rating: Number(bookmark.rating),
+})
 
 
 bookmarkRouter
     .route('/bookmarks')
-    .get((req, res) => {
-        res.json(bookmarks)
+    .get((req, res, next) => {
+        BookarksService.getAllBookmarks(req.app.get('db'))
+            .then(bookmarks => {
+                res.json(bookmarks.map(serializeBookmark))
+            })
+            .catch(next)
     })
     .post(bodyParser, (req, res) => {
         for (const field of ['title', 'url', 'rating']) {
@@ -22,13 +33,13 @@ bookmarkRouter
         }
         const { title, url, description, rating } = req.body
 
-        if(isNaN(rating)) {
+        if (isNaN(rating)) {
             logger.error(`Invalid rating '${rating}' supplied`)
             return res.status(400).send(`'rating' is ${rating}, must be a number`)
         }
 
-        if(!isNaN(rating)) {
-            if(rating < 0 || rating > 5) {
+        if (!isNaN(rating)) {
+            if (rating < 0 || rating > 5) {
                 logger.error(`Invalid rating '${rating}' supplied`)
                 return res.status(400).send(`'rating' is ${rating}, must be between 0 and 5`);
             }
@@ -47,17 +58,20 @@ bookmarkRouter
 
 bookmarkRouter.route('/bookmarks/:id/')
     // Get bookmark by ID
-    .get((req, res) => {
-        const { id } = req.params;
-        const bookmark = bookmarks.find(c => c.id.toString() === id.toString());
-
-        // make sure we found a bookmark
-        if (!bookmark) {
-            logger.error(`Bookmark with id ${id} not found.`);
-            return res.status(404).send('Bookmark Not Found');
-        }
-        res.json(bookmark);
-    })
+    .get((req, res, next) => {
+        const bookmark_id = req.params.id
+        BookarksService.getById(req.app.get('db'), bookmark_id)
+            .then(bookmark => {
+                if (!bookmark) {
+                    logger.error(`Bookmark with id ${bookmark_id} not found.`)
+                    return res.status(404).json({
+                        error: { message: `Bookmark Not Found` }
+                    })
+                }
+                res.json(serializeBookmark(bookmark))
+            })
+            .catch(next)
+    })    
     // Delete bookmark by ID
     .delete((req, res) => {
         const { id } = req.params;
